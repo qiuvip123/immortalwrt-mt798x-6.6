@@ -1,0 +1,48 @@
+#!/bin/sh
+# Konka A31 custom first-boot settings
+
+# 1. Ensure root has no password
+passwd -d root
+
+# 2. Set LAN IP to 192.168.2.1
+sed -i 's/192.168.1.1/192.168.2.1/g' /etc/config/network
+
+# 3. Configure WiFi open (no password)
+# Wait for wireless config to exist
+if [ -f /etc/config/wireless ]; then
+  # Set 2.4G WiFi open
+  uci set wireless.radio0.disabled=0
+  uci set wireless.radio0.channel=auto
+  uci set wireless.default_radio0.ssid='ImmortalWrt'
+  uci set wireless.default_radio0.encryption='none'
+  uci delete wireless.default_radio0.key
+  
+  # Set 5G WiFi open
+  uci set wireless.radio1.disabled=0
+  uci set wireless.radio1.channel=auto
+  uci set wireless.default_radio1.ssid='ImmortalWrt_5G'
+  uci set wireless.default_radio1.encryption='none'
+  uci delete wireless.default_radio1.key
+  
+  uci commit wireless
+fi
+
+# 4. For MTK wifi driver (mt_wifi), also set via mtwifi-cfg if available
+if command -v mtwifi_cfg >/dev/null 2>&1; then
+  # MTK driver uses its own config, try to set open mode
+  echo "MTK wifi driver detected, configuring via wireless config above"
+fi
+
+# 5. Enable ttyd
+uci set ttyd.@ttyd[0].interface='lan'
+uci set ttyd.@ttyd[0].port='7681'
+uci commit ttyd
+
+# 6. Enable tailscale on boot
+/etc/init.d/tailscale enable 2>/dev/null || true
+
+# 7. Enable turboacc
+/etc/init.d/turboacc enable 2>/dev/null || true
+
+# Mark as done
+exit 0
