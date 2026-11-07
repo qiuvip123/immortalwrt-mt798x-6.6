@@ -123,7 +123,7 @@ jobs:
           print("patch done")
           PY
 
-      - name: Patch A31 SPI-NAND NMBM
+      - name: Patch A31 NMBM + align ubi to 896 PEB
         run: |
           cd src
           python3 - <<'PY'
@@ -146,16 +146,27 @@ jobs:
                  '\t\tpartitions {\n'
                  '\t\t\tcompatible = "fixed-partitions";\n')
 
-          text = DTS.read_text(encoding="utf-8")
-          if "mediatek,nmbm" in text:
-              print("[skip] nmbm already present")
-          else:
-              if OLD not in text:
-                  print("[FAIL] anchor not found in A31 dts", file=sys.stderr)
+          OLD_REG = '\t\t\t\treg = <0x580000 0x7a80000>;'
+          NEW_REG = '\t\t\t\treg = <0x580000 0x7000000>;'
+
+          def patch(path, old, new, label):
+              text = path.read_text(encoding="utf-8")
+              if new in text:
+                  print("[skip] %s already patched" % label)
+                  return
+              if old not in text:
+                  print("[FAIL] anchor not found: %s" % label, file=sys.stderr)
                   sys.exit(1)
-              DTS.write_text(text.replace(OLD, NEW, 1), encoding="utf-8")
-              print("[ok] mediatek,nmbm added to A31 spi_nand")
-          print("nmbm occurrences:", DTS.read_text(encoding="utf-8").count("mediatek,nmbm"))
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+              print("[ok] %s" % label)
+
+          patch(DTS, OLD, NEW, "mediatek,nmbm on spi_nand")
+          patch(DTS, OLD_REG, NEW_REG, "ubi partition 112 MiB = 896 PEB")
+
+          for line in DTS.read_text(encoding="utf-8").splitlines():
+              s = line.strip()
+              if "nmbm" in s or "0x7000000" in s or "0x7a80000" in s:
+                  print("  checked:", s)
           PY
 
       - name: Install build dependencies
