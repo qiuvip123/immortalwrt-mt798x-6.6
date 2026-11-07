@@ -1,4 +1,4 @@
-name: Build A31 + Q30 Pro (24.10 / 6.6 + Tailscale UI + NMBM)
+name: Build A31 + Q30 Pro (24.10 / 6.6 + Tailscale + Argon + iStore + NMBM)
 
 on:
   workflow_dispatch:
@@ -30,6 +30,14 @@ jobs:
           git clone --depth 1 -b openwrt-24.10-6.6 https://github.com/Yuzhii0718/immortalwrt-mt798x-6.6-padavanonly src
           cd src
           git log --oneline -1
+
+      - name: Add iStore feed
+        run: |
+          cd src
+          if ! grep -q 'linkease/istore' feeds.conf.default; then
+            echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
+          fi
+          cat feeds.conf.default
 
       - name: Add luci-app-tailscale
         run: |
@@ -169,6 +177,20 @@ jobs:
                   print("  checked:", s)
           PY
 
+      - name: Set Argon as default theme
+        run: |
+          cd src
+          mkdir -p package/base-files/files/etc/uci-defaults
+          cat > package/base-files/files/etc/uci-defaults/99-default-theme <<'EOF'
+          #!/bin/sh
+          uci -q set luci.core.main.mediaurlbase='/luci-static/argon'
+          uci -q set luci.core.main.theme='argon'
+          uci commit luci
+          exit 0
+          EOF
+          chmod 755 package/base-files/files/etc/uci-defaults/99-default-theme
+          cat package/base-files/files/etc/uci-defaults/99-default-theme
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -y
@@ -186,6 +208,8 @@ jobs:
           cd src
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          ./scripts/feeds install -d y -p istore luci-app-store
+          ./scripts/feeds list -r istore || true
 
       - name: Configure
         run: |
@@ -203,12 +227,19 @@ jobs:
             echo 'CONFIG_PACKAGE_curl=y'
             echo 'CONFIG_PACKAGE_luci-app-ttyd=y'
             echo 'CONFIG_PACKAGE_luci-app-filetransfer=y'
+            echo 'CONFIG_PACKAGE_luci-theme-argon=y'
+            echo 'CONFIG_PACKAGE_luci-app-argon-config=y'
+            echo 'CONFIG_PACKAGE_luci-compat=y'
+            echo 'CONFIG_PACKAGE_luci-app-store=y'
+            echo 'CONFIG_PACKAGE_luci-lib-taskd=y'
+            echo 'CONFIG_PACKAGE_luci-lib-xterm=y'
+            echo 'CONFIG_PACKAGE_taskd=y'
           } >> .config
           make defconfig
           echo '=== devices selected ==='
           grep -E '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_' .config || true
-          echo '=== nmbm / tailscale / tun ==='
-          grep -E 'MTD_NAND_MTK_BMT|luci-app-tailscale|kmod-tun|PACKAGE_curl' .config || true
+          echo '=== key packages ==='
+          grep -E 'MTD_NAND_MTK_BMT|luci-app-tailscale|kmod-tun|PACKAGE_curl|luci-theme-argon|argon-config|luci-compat|luci-app-store|lib-taskd|taskd' .config || true
 
       - name: Download sources
         run: |
@@ -242,10 +273,20 @@ jobs:
           ls | grep -q 'jcg_q30-pro.*sysupgrade.itb' || { echo 'missing Q30 sysupgrade.itb'; exit 1; }
           echo 'both sysupgrade images present'
 
+      - name: Verify theme + iStore packages
+        run: |
+          cd output
+          grep -E 'luci-theme-argon|luci-app-argon-config|luci-compat|luci-app-store|luci-lib-taskd|^taskd|luci-lib-xterm' *.manifest || true
+          grep -qh 'luci-theme-argon' *.manifest || { echo 'missing luci-theme-argon'; exit 1; }
+          grep -qh 'luci-app-argon-config' *.manifest || { echo 'missing luci-app-argon-config'; exit 1; }
+          grep -qh 'luci-app-store' *.manifest || { echo 'missing luci-app-store'; exit 1; }
+          grep -qh 'luci-lib-taskd' *.manifest || { echo 'missing luci-lib-taskd'; exit 1; }
+          echo 'theme + iStore all present'
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: a31-q30-2410-tailscale-nmbm
+          name: a31-q30-2410-tailscale-argon-istore
           path: output/
 
       - name: Create Release
